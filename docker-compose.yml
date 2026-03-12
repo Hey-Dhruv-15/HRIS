@@ -1,0 +1,66 @@
+services:
+  spark-master:
+    build:
+      context: ./spark
+      dockerfile: Dockerfile
+    command: ["/opt/spark/bin/spark-class", "org.apache.spark.deploy.master.Master"]
+    ports:
+      - "7077:7077"
+      - "8085:8080"
+    volumes:
+      - ./:/opt/spark-apps
+      - ./data:/opt/data
+      - ./delta:/opt/delta
+
+  spark-worker:
+    build:
+      context: ./spark
+      dockerfile: Dockerfile
+    command: ["/opt/spark/bin/spark-class", "org.apache.spark.deploy.worker.Worker", "spark://spark-master:7077"]
+    depends_on:
+      - spark-master
+    ports:
+      - "8081:8081"
+    volumes:
+      - ./:/opt/spark-apps
+      - ./data:/opt/data
+      - ./delta:/opt/delta
+
+  airflow:
+    image: apache/airflow:2.9.3
+    environment:
+      - AIRFLOW__CORE__LOAD_EXAMPLES=False
+      - AIRFLOW__CORE__EXECUTOR=SequentialExecutor
+      - AIRFLOW__DATABASE__SQL_ALCHEMY_CONN=sqlite:////opt/airflow/airflow.db
+    ports:
+      - "8086:8080"
+    volumes:
+      - ./airflow/dags:/opt/airflow/dags
+      - ./data:/opt/data
+      - ./delta:/opt/delta
+      - ./:/opt/spark-apps
+    command: airflow standalone
+
+  api:
+    build:
+      context: ./api
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./data:/opt/data
+    depends_on:
+      - airflow
+
+  adk-agent:
+    build:
+      context: ./agent
+    ports:
+      - "8002:8000"
+    environment:
+      - NHRIS_DATA=/opt/data
+      - GOOGLE_GENAI_USE_VERTEXAI=${GOOGLE_GENAI_USE_VERTEXAI}
+      - GOOGLE_API_KEY=${GOOGLE_API_KEY}
+      - GOOGLE_CLOUD_PROJECT=${GOOGLE_CLOUD_PROJECT}
+      - GOOGLE_CLOUD_LOCATION=${GOOGLE_CLOUD_LOCATION}
+    volumes:
+      - ./data:/opt/data
